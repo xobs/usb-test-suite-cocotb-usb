@@ -40,7 +40,9 @@ class UsbTest:
         self.max_packet_size = kwargs.get('max_packet_size', 32)
         self.dut = dut
         self.clock_period = 20830
+        self.clock_100_period = 10000
         cocotb.fork(Clock(dut.clk48_host, self.clock_period, 'ps').start())
+        cocotb.fork(Clock(dut.clk100, self.clock_100_period, 'ps').start())
         if not decouple_clocks:
             cocotb.fork(
                 Clock(dut.clk48_device, self.clock_period, 'ps').start())
@@ -70,9 +72,9 @@ class UsbTest:
         self.dut.usb_d_n = 0
         self.address = 0
 
-        yield ClockCycles(self.dut.clk48_host, 10, rising=True)
+        yield ClockCycles(self.dut.clk48_host, 50, rising=True)
         self.dut.reset = 0
-        yield ClockCycles(self.dut.clk48_host, 10, rising=True)
+        yield ClockCycles(self.dut.clk48_host, 50, rising=True)
 
     @cocotb.coroutine
     def wait(self, time, units="us"):

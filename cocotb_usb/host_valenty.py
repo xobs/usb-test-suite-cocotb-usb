@@ -12,6 +12,7 @@ from cocotb_usb.utils import grouper_tofit, parse_csr, assertEqual
 from cocotb_usb.host import UsbTest
 
 
+
 class UsbTestValenty(UsbTest):
     """Class for testing ValentyUSB IP core.
     Includes functions to communicate and generate responses without a CPU,
@@ -397,6 +398,11 @@ class UsbTestValenty(UsbTest):
         out_ev = yield self.read(self.csrs['usb_out_ev_pending'])
         yield self.transaction_status_out(addr, epaddr_out)
         yield RisingEdge(self.dut.clk12)
+
+        yield RisingEdge(self.dut.clk12) # more time to percolate the event through synchronizers
+        yield RisingEdge(self.dut.clk12) # before clearing it
+        yield RisingEdge(self.dut.clk12) # this is for CDC implementations
+        
         out_ev = yield self.read(self.csrs['usb_out_ev_pending'])
         yield self.write(self.csrs['usb_out_ctrl'], 0x20)  # Reset FIFO
         yield self.write(self.csrs['usb_out_ev_pending'], out_ev)
