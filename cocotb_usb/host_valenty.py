@@ -12,6 +12,7 @@ from cocotb_usb.utils import grouper_tofit, parse_csr, assertEqual
 from cocotb_usb.host import UsbTest
 
 
+
 class UsbTestValenty(UsbTest):
     """Class for testing ValentyUSB IP core.
     Includes functions to communicate and generate responses without a CPU,
@@ -29,7 +30,7 @@ class UsbTestValenty(UsbTest):
         # Litex imports
         from cocotb_usb.wishbone import WishboneMaster
 
-        self.wb = WishboneMaster(dut, "wishbone", dut.clk12, timeout=20)
+        self.wb = WishboneMaster(dut, "wishbone", dut.clk100, timeout=20)
         self.csrs = dict()
         self.csrs = parse_csr(csr_file)
         super().__init__(dut, **kwargs)
@@ -95,15 +96,23 @@ class UsbTestValenty(UsbTest):
     def expect_setup(self, epaddr, expected_data):
         actual_data = []
         # wait for data to appear
-        for i in range(128):
+        for i in range(3000):
+            self.dut._log.debug("Interrupt loop {}".format(i))
+            status = yield self.read(self.csrs['usb_setup_ev_pending'])
+            have = status & 0x1
+            if have:
+                break
+            yield RisingEdge(self.dut.clk100)
+            
+        for i in range(1280):
             self.dut._log.debug("Prime loop {}".format(i))
             status = yield self.read(self.csrs['usb_setup_status'])
             have = status & 0x10
             if have:
                 break
-            yield RisingEdge(self.dut.clk12)
+            yield RisingEdge(self.dut.clk100)
 
-        for i in range(48):
+        for i in range(480):
             self.dut._log.debug("Read loop {}".format(i))
             status = yield self.read(self.csrs['usb_setup_status'])
             have = status & 0x10
@@ -111,7 +120,7 @@ class UsbTestValenty(UsbTest):
                 break
             v = yield self.read(self.csrs['usb_setup_data'])
             actual_data.append(v)
-            yield RisingEdge(self.dut.clk12)
+            yield RisingEdge(self.dut.clk100)
 
         if len(actual_data) < 2:
             raise TestFailure("data was short (got {}, expected {})".format(
@@ -161,16 +170,24 @@ class UsbTestValenty(UsbTest):
     @cocotb.coroutine
     def expect_data(self, epaddr, expected_data, expected):
         actual_data = []
-        # wait for data to appear
-        for i in range(128):
+        for i in range(5000):
+            self.dut._log.debug("Interrupt loop {}".format(i))
+            status = yield self.read(self.csrs['usb_out_ev_pending'])
+            have = status & 0x1
+            if have:
+                break
+            yield RisingEdge(self.dut.clk100)
+
+        #  wait for data to appear
+        for i in range(1280):
             self.dut._log.debug("Prime loop {}".format(i))
             status = yield self.read(self.csrs['usb_out_status'])
             have = status & (1 << 4)
             if have:
                 break
-            yield RisingEdge(self.dut.clk12)
+            yield RisingEdge(self.dut.clk100)
 
-        for i in range(256):
+        for i in range(2560):
             self.dut._log.debug("Read loop {}".format(i))
             status = yield self.read(self.csrs['usb_out_status'])
             have = status & (1 << 4)
@@ -178,7 +195,7 @@ class UsbTestValenty(UsbTest):
                 break
             v = yield self.read(self.csrs['usb_out_data'])
             actual_data.append(v)
-            yield RisingEdge(self.dut.clk12)
+            yield RisingEdge(self.dut.clk100)
 
         if expected == PID.ACK:
             if len(actual_data) < 2:
@@ -339,6 +356,8 @@ class UsbTestValenty(UsbTest):
         in_ev = yield self.read(self.csrs['usb_in_ev_pending'])
         yield self.write(self.csrs['usb_in_ev_pending'], in_ev)
         yield self.write(self.csrs['usb_in_ctrl'], 1 << 5)  # Reset IN buffer
+        yield RisingEdge(self.dut.clk12)
+        yield RisingEdge(self.dut.clk12)
 
         # Was the time limit honored?
         if get_sim_time("us") > self.request_deadline:
@@ -383,7 +402,7 @@ class UsbTestValenty(UsbTest):
             self.dut._log.info("data stage")
             yield self.transaction_data_in(addr, epaddr_in, descriptor_data)
 
-            # Give the signal two clock cycles
+            # Give the signal two slow clock cycles
             # to percolate through the event manager
             yield RisingEdge(self.dut.clk12)
             yield RisingEdge(self.dut.clk12)
@@ -397,6 +416,11 @@ class UsbTestValenty(UsbTest):
         out_ev = yield self.read(self.csrs['usb_out_ev_pending'])
         yield self.transaction_status_out(addr, epaddr_out)
         yield RisingEdge(self.dut.clk12)
+
+        yield RisingEdge(self.dut.clk100) # more time to percolate the event through synchronizers
+        yield RisingEdge(self.dut.clk100) # before clearing it
+        yield RisingEdge(self.dut.clk100) # this is for CDC implementations
+        
         out_ev = yield self.read(self.csrs['usb_out_ev_pending'])
         yield self.write(self.csrs['usb_out_ctrl'], 0x20)  # Reset FIFO
         yield self.write(self.csrs['usb_out_ev_pending'], out_ev)
